@@ -73,6 +73,8 @@ ggplot() +
     theme (
         legend.position = "right"
   )
+
+
 ```
 
 ```{r}
@@ -113,11 +115,41 @@ matrix1 <- canada_pairs %>%
 
 matrix1 <- matrix1[rowSums(matrix1) > 0, colSums(matrix1) > 0]
 
+country_names <- rownames(matrix1) 
+my_colors <- setNames(
+  c("red", RColorBrewer::brewer.pal(length(country_names)-1, "Set3")),
+  country_names
+)
+# set 'Canada' to red and the rest unique colors from Set3 palette
+my_colors["Canada"] <- "red"
+
 # create chord diagram
 
 circos.clear()
 circos.par(gap.degree = 4)
-chordDiagram(matrix1, transparency = 0.5)
+chordDiagram(
+  matrix1,
+  annotationTrack = "grid",   
+  grid.col = my_colors,
+  transparency = 0.5,
+  preAllocateTracks = list(track.height = 0.08)
+)
+
+# Add tilted labels
+circos.trackPlotRegion(
+  track.index = 1, 
+  panel.fun = function(x, y) {
+    sector.name = get.cell.meta.data("sector.index")
+    xlim = get.cell.meta.data("xlim")
+    ylim = get.cell.meta.data("ylim")
+    offset <- 1  # move labels further out
+    circos.text(
+      mean(xlim), ylim[2] + offset, sector.name,
+      cex = 0.7, adj = c(0.5, 0), facing = "clockwise", niceFacing = TRUE
+    )
+  }, 
+  bg.border = NA
+)
 ```
 
 I liked this idea, but it was too messy, so I tried again with just the top 10 countries with links to Canada.
