@@ -1,0 +1,191 @@
+---
+title: "May 12 2026- Tidy Tuesday"
+output: html_document
+date: "2026-05-11"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidygeocoder)
+library(tidyverse)
+library(tidytuesdayR)
+library(janitor)
+library(tinytable)
+library(ggplot2)
+library(maps)
+library(dplyr)
+library(circlize)
+library(tidyr)
+
+#Download TidyTuesday data
+tuesdata <- tidytuesdayR::tt_load("2026-05-12")
+
+#Find datasets for this week
+names(tuesdata)
+
+#Name datasets
+cities <- tuesdata$cities
+links <- tuesdata$links
+```
+
+For this dataset, I was interested in Canadian cities with sister cities. I began by filtering the dataset to show cities in the dataset, and using geocode to create additional columns that would show which province/territory each city was in, so that I could look at the density of sister cities by province. 
+
+
+```{r}
+#Check cities in Canada
+cdncities <- cities %>%
+    filter(country == "Canada")
+
+names(cities)
+
+#Geocode to provinces
+cdncities_prov <- cdncities %>%
+reverse_geocode(
+    lat = lat,
+    long = lng,
+    method = "osm",
+    full_results = TRUE
+)
+
+#check work    
+head(cdncities_prov)
+
+#rename 'state' to 'province' for clarity in Cdn context
+cdncities_prov <- cdncities_prov %>%
+  mutate(province = state)
+
+head(cdncities_prov)
+```
+
+I then created a map with points for each city, colour coded by province, and used leaflet to create an interactive map that had clickable points to show the city names.
+
+```{r}
+
+#Create map with points for sister cities
+ggplot() +
+    borders("world", regions = "Canada", fill = "grey") +
+    geom_point(data = cdncities_prov,
+               aes(x = lng, y = lat, color = province), size = 2, alpha = 0.7) +
+    labs(title = "Canadian Cities with Sister Cities by Province (Twinned Cities Dataset)", color = "Province") +
+    coord_quickmap() +
+    theme_minimal() +
+    theme (
+        legend.position = "right"
+  )
+```
+
+```{r}
+
+#Make map with clickable points to show city names 
+library(leaflet)
+leaflet(cdncities_prov) %>%
+  addTiles() %>%
+  addCircleMarkers(~lng, ~lat, color = ~factor(province),
+  popup = ~name...2, radius = 6)
+```
+
+
+The provinces with the highest density of sister cities appear to be British Columbia and Ontario. I then wanted to look at the sister city links by country. I first tried creating a chord diagram.
+
+
+```{r}
+# join country info for links
+links_country <- links %>%
+  left_join(cities %>% select(id, country_source = country), by = c("source" = "id")) %>%
+  left_join(cities %>% select(id, country_target = country), by = c("target" = "id"))
+
+# make unique country pairs
+canada_pairs <- links_country %>%
+  filter(country_source == "Canada" | country_target == "Canada") %>%
+  mutate(
+    country_a = pmin(country_source, country_target),
+    country_b = pmax(country_source, country_target)
+  ) %>%
+  group_by(country_a, country_b) %>%
+  summarize(n = n(), .groups = 'drop')
+
+# create matrix
+matrix1 <- canada_pairs %>%
+  tidyr::pivot_wider(names_from = country_b, values_from = n, values_fill = 0) %>%
+  tibble::column_to_rownames('country_a') %>%
+  as.matrix()
+
+matrix1 <- matrix1[rowSums(matrix1) > 0, colSums(matrix1) > 0]
+
+# create chord diagram
+
+circos.clear()
+circos.par(gap.degree = 4)
+chordDiagram(matrix1, transparency = 0.5)
+```
+
+I liked this idea, but it was too messy, so I tried again with just the top 10 countries with links to Canada.
+
+
+```{r}
+# Rank countries by the number of links to/from Canada
+top_n <- 10  # adjust as needed
+
+# Get counts for top countries 
+country_counts <- canada_pairs %>%
+  filter(country_a == "Canada" | country_b == "Canada") %>%
+  mutate(other_country = ifelse(country_a == "Canada", country_b, country_a)) %>%
+  group_by(other_country) %>%
+  summarise(n = sum(n)) %>%
+  arrange(desc(n))
+
+top_countries <- country_counts$other_country[1:top_n]
+
+# Only keep top countries + Canada, set rest as "Other"
+canada_pairs_small <- canada_pairs %>%
+  mutate(across(c(country_a, country_b), 
+                ~ifelse(!(.) %in% c("Canada", top_countries), "Other", .))) %>%
+  group_by(country_a, country_b) %>%
+  summarise(n = sum(n), .groups = "drop")
+
+# create new matrix without only top countries & Canada
+matrix_small <- canada_pairs_small %>%
+  pivot_wider(names_from = country_b, values_from = n, values_fill = 0) %>%
+  tibble::column_to_rownames('country_a') %>%
+  as.matrix()
+
+# Remove empty rows/cols
+matrix_small <- matrix_small[rowSums(matrix_small) > 0, colSums(matrix_small) > 0]
+
+country_names <- rownames(matrix_small)  # or colnames(matrix_small), should be the same set
+my_colors <- setNames(
+  c("red", RColorBrewer::brewer.pal(length(country_names)-1, "Set3")),
+  country_names
+)
+# set 'Canada' to red and the rest unique colors from Set3 palette
+my_colors["Canada"] <- "red"
+
+
+# create chord diagram
+circos.clear()
+circos.par(gap.degree = 10, track.margin = c(0.01, 0.01))
+chordDiagram(
+  matrix_small,
+  annotationTrack = "grid",   
+  grid.col = my_colors,
+  transparency = 0.5,
+  preAllocateTracks = list(track.height = 0.08)
+)
+
+# Add tilted labels
+circos.trackPlotRegion(
+  track.index = 1, 
+  panel.fun = function(x, y) {
+    sector.name = get.cell.meta.data("sector.index")
+    xlim = get.cell.meta.data("xlim")
+    ylim = get.cell.meta.data("ylim")
+    offset <- 1  # move labels further out
+    circos.text(
+      mean(xlim), ylim[2] + offset, sector.name,
+      cex = 0.7, adj = c(0.5, 0), facing = "clockwise", niceFacing = TRUE
+    )
+  }, 
+  bg.border = NA
+)
+```
