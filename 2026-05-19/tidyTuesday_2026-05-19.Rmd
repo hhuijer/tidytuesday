@@ -1,0 +1,70 @@
+---
+title: "2026-05-19"
+output: html_document
+date: "2026-05-20"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(tidytuesdayR)
+library(janitor)
+library(tinytable)
+library(tidyr)
+
+#download TidyTuesday data
+tuesdata <- tidytuesdayR::tt_load('2026-05-19')
+
+#name datasets
+member_participation_stats_by_country <- tuesdata$member_participation_stats_by_country
+metadata_coverage_stats_by_country <- tuesdata$metadata_coverage_stats_by_country
+
+```
+
+Firstly, I filtered the member participation stats to view Canadian data. I then created a plot to show the total members over time in Canada, current up to 2026.
+
+```{r}
+#filter dataset to show Canadian data
+cdn_member_stats <- member_participation_stats_by_country %>%
+    filter(iso3_code == "CAN")
+
+colnames(cdn_member_stats)
+```
+
+```{r}
+#create plot of total members over time in Canada
+ggplot(cdn_member_stats, aes(x = current_up_to, y = total_members)) +
+  geom_line() +
+  labs(title = "Trend of Total Members Over Time in Canada")
+```
+
+We can see that the total number of members in Canada has increased over the last ~6 years. I then wanted to look at some metadata coverage stats across countries. I chose to use the G7 countries to create graphs with enough countries for some comparison, but not so many that the graph became jumbled/messy. 
+
+```{r}
+#create graph of ORCID coverage over time
+#filter by G7 countries & journal article document type
+    timeseries_orcid <- metadata_coverage_stats_by_country %>%
+      filter(document_type == "journal-article",
+             iso3_code %in% c("CAN", "FRA", "DEU", "ITA", "JPN", "GBR", "USA")) %>%
+      group_by(current_up_to, iso3_code) %>%
+      summarise(orcid_coverage = sum(with_orcid, na.rm=TRUE)/sum(n_dois, na.rm=TRUE))
+
+    ggplot(timeseries_orcid, aes(x = as.Date(current_up_to), y = orcid_coverage, color = iso3_code, size = iso3_code == "CAN")) +
+      geom_line() +
+      scale_size_manual(values=c(1,2), guide=FALSE) +
+      labs(title = "ORCID Coverage Over Time For G7 Countries (Journal Articles)", x = "Date", y = "% with ORCID")
+
+#create graph of funding acknowledgements 
+   timeseries_funding <- metadata_coverage_stats_by_country %>%
+      filter(document_type == "journal-article",
+             iso3_code %in% c("CAN", "FRA", "DEU", "ITA", "JPN", "GBR", "USA")) %>%
+      group_by(current_up_to, iso3_code) %>%
+      summarise(coverage_funding = sum(acknowledges_funding, na.rm=TRUE)/sum(n_dois, na.rm=TRUE))
+
+    ggplot(timeseries_funding, aes(x = as.Date(current_up_to), y = coverage_funding, color = iso3_code, size = iso3_code == "CAN")) +
+      geom_line() +
+      scale_size_manual(values=c(1,2), guide=FALSE) +
+      labs(title = "Funding Acknowledgement Coverage Over Time For G7 Countries (Journal Articles)", x = "Date", y = "% with Funding Acknowledgment")
+    
+```
