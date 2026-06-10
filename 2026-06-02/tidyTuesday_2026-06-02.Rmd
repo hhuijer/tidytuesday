@@ -1,0 +1,107 @@
+---
+title: "tidyTuesday 2026-06-02"
+output: html_document
+date: "2026-06-09"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+install.packages("countrycode")
+
+library(tidyverse)
+library(ggplot2)
+library(reshape2)
+library(countrycode)
+
+#load data
+tuesdata <- tidytuesdayR::tt_load('2026-06-02')
+
+eplp <- tuesdata$eplp
+```
+
+I wanted to be able to compare across countries, so I combined variables for mandatory maternity leave before and after birth, voluntary maternity leave after birth, co-parent leave, job-protected leave for mothers & co-parents, and paid parental leave to create a 'generosity of parental leave' score.
+
+```{r}
+parental_leave <- eplp %>%
+    mutate(
+        #create a score for generosity of parental leave
+        generosity_index = (
+            mat_m_ld_bb + mat_m_ld_ab +
+                mat_v_ld_ab +
+                co_ld +
+                par1_ld + 
+                par2_ld + 
+                par3_ld +
+                (jp_ld_m + jp_ld_co) / 2
+        ) / 8,
+        country_name = countrycode::countrycode(country, 'iso2c', 'country.name')
+        ) %>%
+arrange(desc(generosity_index)) %>%
+    group_by(country) %>%
+    slice(1) %>%
+    ungroup()
+
+heatmap_data <- eplp %>%
+  mutate(
+    generosity_index = (
+      mat_m_ld_bb + mat_m_ld_ab + 
+      mat_v_ld_ab +
+      co_ld +
+      par1_ld +
+      par2_ld + 
+      par3_ld +
+      (jp_ld_m + jp_ld_co) / 2
+    ) / 8,
+    country_name = countrycode::countrycode(country, 'iso2c', 'country.name')
+  ) %>%
+  select(country, country_name, year, generosity_index) %>%
+  drop_na()
+
+# Plot 1: Basic heatmap with country names
+ggplot(heatmap_data, aes(x = year, y = reorder(country_name, generosity_index, FUN = median), fill = generosity_index)) +
+  geom_tile(color = "white", size = 0.3) +
+  scale_fill_gradient2(
+    low = "#d73027", 
+    mid = "#fee08b", 
+    high = "#1a9850",
+    name = "Generosity\nIndex\n(days)"
+  ) +
+  labs(
+    title = "European Parental Leave Generosity Over Time",
+    x = "Year",
+    y = "Country",
+    subtitle = "Combined metric: mandatory + voluntary + paid parental + job-protected leave"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    plot.title = element_text(face = "bold", size = 14),
+    legend.position = "right"
+  )
+
+# Plot 2: 2015-2024 with greater detail
+recent_years <- heatmap_data %>%
+  filter(year >= 2015)  
+
+ggplot(recent_years, aes(x = factor(year), y = reorder(country_name, generosity_index, FUN = median), fill = generosity_index)) +
+  geom_tile(color = "white", size = 0.5) +
+  geom_text(aes(label = round(generosity_index, 0)), size = 3, color = "black") +
+  scale_fill_gradient2(
+    low = "#d73027", 
+    mid = "#fee08b", 
+    high = "#1a9850",
+    name = "Generosity\nIndex"
+  ) +
+  labs(
+    title = "European Parental Leave Generosity: Recent Trends (2015-2024)",
+    x = "Year",
+    y = "Country"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text = element_text(size = 10),
+    plot.title = element_text(face = "bold", size = 14)
+  )
+
+```
